@@ -1,0 +1,14 @@
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/lib/
+
+# Node
+app/node_modules/
+app/dist/
+
+# Env
+app/.env
+contracts/.env
+app/.env.keys
+contracts/.env.keys

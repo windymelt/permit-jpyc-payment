@@ -1,0 +1,5 @@
+name = "permit-payment-dapp"
+pages_build_output_dir = "dist"
+
+# カスタムドメインは Cloudflare Pages ダッシュボードで設定する:
+# Pages プロジェクト → Custom domains → Add a custom domain → pay.capslock.dev

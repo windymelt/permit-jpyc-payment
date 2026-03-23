@@ -1,0 +1,306 @@
+import { useState, useCallback, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useWalletClient, usePublicClient, useAccount, useChainId, useSwitchChain } from "wagmi";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { formatUnits } from "viem";
+import QRDisplay from "../components/QRDisplay";
+import QRScanner from "../components/QRScanner";
+import { signPermit } from "../lib/permit";
+import { getChainConfig } from "../lib/chains";
+import { ERC20_ABI } from "../lib/contracts";
+import { receiverConfirmUrl, readFragment, decodeFragment } from "../lib/qrUrl";
+
+
+type Step = "S-1" | "S-2" | "S-3";
+
+interface QRaData {
+  type: "permit-request";
+  chainId: number;
+  token: `0x${string}`;
+  receiver: `0x${string}`;
+  value: string;
+  decimals: number;
+  deadline: number;
+}
+
+interface QRbData {
+  type: "permit-signature";
+  chainId: number;
+  token: `0x${string}`;
+  owner: `0x${string}`;
+  receiver: `0x${string}`;
+  value: string;
+  deadline: number;
+  v: number;
+  r: `0x${string}`;
+  s: `0x${string}`;
+}
+
+const styles = {
+  root: {
+    padding: "24px 0",
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 20,
+  },
+  header: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+  },
+  backButton: {
+    background: "none",
+    border: "none",
+    fontSize: 20,
+    cursor: "pointer",
+    padding: 4,
+  },
+  title: { margin: 0, fontSize: 20, fontWeight: 700 },
+  card: {
+    background: "white",
+    borderRadius: 12,
+    padding: 20,
+    boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+  },
+  row: { display: "flex", justifyContent: "space-between", marginBottom: 8 },
+  label: { color: "#6c757d", fontSize: 14 },
+  value: { fontWeight: 600, fontSize: 14, wordBreak: "break-all" as const },
+  button: {
+    width: "100%",
+    padding: "14px 0",
+    fontSize: 16,
+    fontWeight: 600,
+    borderRadius: 10,
+    border: "none",
+    cursor: "pointer",
+    background: "#198754",
+    color: "white",
+  },
+  errorText: { color: "#dc3545", fontSize: 14 },
+  hint: { color: "#6c757d", fontSize: 14, margin: 0, textAlign: "center" as const },
+} as const;
+
+export default function SenderFlow() {
+  const navigate = useNavigate();
+  const [step, setStep] = useState<Step>("S-1");
+  const [qrAData, setQrAData] = useState<QRaData | null>(null);
+  const [tokenSymbol, setTokenSymbol] = useState<string>("");
+  const [tokenDecimals, setTokenDecimals] = useState<number>(18);
+  const [qrBUrl, setQrBUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [signing, setSigning] = useState(false);
+
+  const { address, isConnected } = useAccount();
+  const chainId = useChainId();
+  const { switchChain } = useSwitchChain();
+  const { data: walletClient } = useWalletClient();
+  const publicClient = usePublicClient();
+
+  // /sender#<base64(QR_A)> で直接開かれた場合、フラグメントからデータを読んで S-2 へ
+  useEffect(() => {
+    const data = readFragment<QRaData>();
+    if (!data || data.type !== "permit-request") return;
+    loadQrAData(data);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const loadQrAData = useCallback(
+    async (data: QRaData) => {
+      setError(null);
+      setTokenDecimals(data.decimals);
+      // シンボルはオンチェーンから取得（失敗しても表示には影響しない）
+      if (publicClient) {
+        publicClient.readContract({
+          address: data.token,
+          abi: ERC20_ABI,
+          functionName: "symbol",
+        }).then((sym) => setTokenSymbol(sym as string)).catch(() => setTokenSymbol(""));
+      }
+      setQrAData(data);
+      setStep("S-2");
+    },
+    [publicClient]
+  );
+
+  // qrAData が確定したら必要に応じてチェーンを切り替える
+  // （MetaMask deep link 経由で開いた場合、手動スキャン時のチェーン切り替えが走らないため）
+  useEffect(() => {
+    if (!qrAData || chainId === qrAData.chainId) return;
+    switchChain({ chainId: qrAData.chainId }, {
+      onError: () => setError(`チェーンを ${qrAData.chainId} に切り替えてください`),
+    });
+  }, [qrAData, chainId, switchChain]);
+
+  // S-1: QR_A スキャン（手動スキャン時のフォールバック）
+  const handleQRAScan = useCallback(
+    async (text: string) => {
+      setError(null);
+
+      // URL形式（新方式）とJSON形式（後方互換）の両方に対応
+      let data: QRaData;
+      try {
+        if (text.includes("#")) {
+          const fragment = text.split("#")[1];
+          data = decodeFragment<QRaData>(fragment);
+        } else {
+          data = JSON.parse(text) as QRaData;
+        }
+        if (data.type !== "permit-request") throw new Error("invalid QR type");
+      } catch {
+        setError("QRコードの形式が正しくありません");
+        return;
+      }
+
+      if (chainId !== data.chainId) {
+        try {
+          await switchChain({ chainId: data.chainId });
+        } catch {
+          setError(`チェーンを ${data.chainId} に切り替えてください`);
+          return;
+        }
+      }
+
+      await loadQrAData(data);
+    },
+    [chainId, switchChain, loadQrAData]
+  );
+
+  // S-3: permit 署名
+  const handleSign = useCallback(async () => {
+    if (!qrAData || !walletClient || !publicClient || !address) return;
+
+    const chainConfig = getChainConfig(qrAData.chainId);
+    if (!chainConfig) {
+      setError(`非対応チェーン: ${qrAData.chainId}`);
+      return;
+    }
+
+    setSigning(true);
+    setError(null);
+    try {
+      const { v, r, s } = await signPermit({
+        walletClient,
+        publicClient,
+        tokenAddress: qrAData.token,
+        ownerAddress: address,
+        spenderAddress: chainConfig.permitPaymentAddress,
+        value: BigInt(qrAData.value),
+        deadline: BigInt(qrAData.deadline),
+        chainId: qrAData.chainId,
+      });
+
+      const qrB: QRbData = {
+        type: "permit-signature",
+        chainId: qrAData.chainId,
+        token: qrAData.token,
+        owner: address,
+        receiver: qrAData.receiver,
+        value: qrAData.value,
+        deadline: qrAData.deadline,
+        v,
+        r,
+        s,
+      };
+      setQrBUrl(receiverConfirmUrl(qrB));
+      setStep("S-3");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "署名に失敗しました");
+    } finally {
+      setSigning(false);
+    }
+  }, [qrAData, walletClient, publicClient, address]);
+
+  const formattedAmount =
+    qrAData
+      ? `${formatUnits(BigInt(qrAData.value), tokenDecimals)} ${tokenSymbol}`
+      : "";
+
+  const deadlineStr = qrAData
+    ? new Date(qrAData.deadline * 1000).toLocaleString("ja-JP")
+    : "";
+
+  return (
+    <div style={styles.root}>
+      <div style={styles.header}>
+        <button style={styles.backButton} onClick={() => navigate("/")}>
+          &#8592;
+        </button>
+        <h2 style={styles.title}>
+          送り手フロー
+          {step === "S-1" && " - QRスキャン"}
+          {step === "S-2" && " - 内容確認"}
+          {step === "S-3" && " - 署名完了"}
+        </h2>
+      </div>
+
+      {!isConnected && (
+        <div style={styles.card}>
+          <p style={{ margin: "0 0 12px" }}>ウォレットを接続してください</p>
+          <ConnectButton />
+        </div>
+      )}
+
+      {/* S-1: 手動スキャン（QR_A URLから開かれなかった場合のフォールバック） */}
+      {step === "S-1" && (
+        <>
+          <div style={styles.card}>
+            <p style={styles.hint}>
+              受け手のQRコードをスキャンしてください。
+              <br />
+              カメラアプリから直接開くこともできます。
+            </p>
+          </div>
+          <QRScanner onResult={handleQRAScan} onError={(e) => setError(e.message)} />
+          {error && <p style={styles.errorText}>{error}</p>}
+        </>
+      )}
+
+      {/* S-2: 内容確認 */}
+      {step === "S-2" && qrAData && (
+        <>
+          <div style={styles.card}>
+            <div style={styles.row}>
+              <span style={styles.label}>送り先</span>
+              <span style={styles.value}>{qrAData.receiver}</span>
+            </div>
+            <div style={styles.row}>
+              <span style={styles.label}>トークン</span>
+              <span style={styles.value}>{qrAData.token}</span>
+            </div>
+            <div style={styles.row}>
+              <span style={styles.label}>金額</span>
+              <span style={styles.value}>{formattedAmount}</span>
+            </div>
+            <div style={styles.row}>
+              <span style={styles.label}>有効期限</span>
+              <span style={styles.value}>{deadlineStr}</span>
+            </div>
+          </div>
+
+          <div style={{ background: "#e8f4fd", border: "1px solid #b6d4fe", borderRadius: 8, padding: 12, fontSize: 13, color: "#084298" }}>
+            MetaMask の署名画面で「無制限」と表示されることがありますが、実際に承認される金額は上記の通りです。
+          </div>
+
+          {error && <p style={styles.errorText}>{error}</p>}
+
+          <button style={styles.button} onClick={handleSign} disabled={signing || !isConnected}>
+            {signing ? "署名中..." : "署名する"}
+          </button>
+        </>
+      )}
+
+      {/* S-3: QR_B URL を表示（受け手がスキャンすると確認画面へ） */}
+      {step === "S-3" && qrBUrl && (
+        <>
+          <QRDisplay
+            value={qrBUrl}
+            label="受け手にスキャンしてもらってください"
+          />
+          <p style={styles.hint}>
+            受け手がスキャンすると送信確認画面が開きます。
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
