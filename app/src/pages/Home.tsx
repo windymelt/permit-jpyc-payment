@@ -1,5 +1,10 @@
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { useAccount, useWriteContract } from "wagmi";
+import { parseUnits, createPublicClient, http } from "viem";
+import { mainnet } from "viem/chains";
+import { normalize } from "viem/ens";
 
 const styles = {
   root: {
@@ -65,8 +70,52 @@ const styles = {
   },
 } as const;
 
+const JPYC_ADDRESS = "0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29" as const;
+const AVALANCHE_CHAIN_ID = 43114;
+const DONATE_AMOUNT = parseUnits("100", 18);
+const TRANSFER_ABI = [
+  {
+    name: "transfer",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+] as const;
+
+const ERC681_URL =
+  "ethereum:0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29@43114/transfer?address=windymelt.eth&uint256=100000000000000000000";
+
 export default function Home() {
   const navigate = useNavigate();
+  const { isConnected } = useAccount();
+  const { writeContract, isPending: isDonating } = useWriteContract();
+  const [doneeAddress, setDoneeAddress] = useState<`0x${string}` | null>(null);
+
+  // windymelt.eth を mainnet ENS で解決する
+  useEffect(() => {
+    const client = createPublicClient({ chain: mainnet, transport: http() });
+    client
+      .getEnsAddress({ name: normalize("windymelt.eth") })
+      .then((addr) => {
+        if (addr) setDoneeAddress(addr);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleDonate = () => {
+    if (!doneeAddress) return;
+    writeContract({
+      address: JPYC_ADDRESS,
+      abi: TRANSFER_ABI,
+      functionName: "transfer",
+      args: [doneeAddress, DONATE_AMOUNT],
+      chainId: AVALANCHE_CHAIN_ID,
+    });
+  };
 
   return (
     <div style={styles.root}>
@@ -115,6 +164,44 @@ export default function Home() {
           ちょうど、小切手に署名してもらい、自分でお金を受け取りに行くのと同じです。
         </p>
       </div>
+
+      {isConnected && doneeAddress ? (
+        <button
+          onClick={handleDonate}
+          disabled={isDonating}
+          style={{
+            display: "inline-block",
+            padding: "12px 24px",
+            fontSize: 14,
+            fontWeight: 600,
+            borderRadius: 10,
+            border: "1px solid #e9ecef",
+            background: "#f8f9fa",
+            color: "#495057",
+            cursor: isDonating ? "not-allowed" : "pointer",
+          }}
+        >
+          {isDonating ? "ウォレットで承認してください..." : "作者を応援する (100 JPYC)"}
+        </button>
+      ) : (
+        <a
+          href={ERC681_URL}
+          style={{
+            display: "inline-block",
+            padding: "12px 24px",
+            fontSize: 14,
+            fontWeight: 600,
+            borderRadius: 10,
+            border: "1px solid #e9ecef",
+            background: "#f8f9fa",
+            color: "#495057",
+            textDecoration: "none",
+            cursor: "pointer",
+          }}
+        >
+          作者を応援する (100 JPYC)
+        </a>
+      )}
     </div>
   );
 }
