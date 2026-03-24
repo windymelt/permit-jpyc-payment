@@ -299,7 +299,7 @@ export default function SenderFlow() {
       {/* S-1: 手動スキャン（QR_A URLから開かれなかった場合のフォールバック） */}
       {/* scannerReady はフラグメント確認後に true になる。フラグメントありの場合は */}
       {/* S-2 へ遷移済みのためスキャナーは表示されない。 */}
-      {step === "S-1" && scannerReady && (
+      {step === "S-1" && scannerReady && isConnected && (
         <>
           <div style={styles.card}>
             <p style={styles.hint}>

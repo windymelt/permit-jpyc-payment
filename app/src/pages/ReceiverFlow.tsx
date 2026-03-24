@@ -555,7 +555,7 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
 
           {/* かんたん受け取り */}
           {formMode === "simple" && (
-            <div style={styles.card}>
+            <div style={{ ...styles.card, ...(!isConnected ? { opacity: 0.45, pointerEvents: "none" as const } : {}) }}>
               <p style={{ margin: "0 0 4px", fontSize: 13, color: "#6c757d", textAlign: "center" as const }}>
                 Avalanche / JPYC / 有効期限5分
               </p>
@@ -604,7 +604,7 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
 
           {/* 高度な設定 */}
           {formMode === "advanced" && (
-            <div style={styles.card}>
+            <div style={{ ...styles.card, ...(!isConnected ? { opacity: 0.45, pointerEvents: "none" as const } : {}) }}>
               <div style={styles.formGroup}>
                 <label style={styles.label}>チェーン</label>
                 <select
