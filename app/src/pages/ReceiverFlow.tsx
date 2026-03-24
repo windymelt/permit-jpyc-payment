@@ -163,6 +163,9 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
   const [relaySession, setRelaySession] = useState<RelaySession | null>(null);
   const relayWsRef = useRef<WebSocket | null>(null);
 
+  // QR_A カウントダウン表示
+  const [countdown, setCountdown] = useState<string>("");
+
   const chainConfig = getChainConfig(selectedChainId);
 
   const { writeContract, data: txHash, isPending, error: writeError } = useWriteContract();
@@ -205,6 +208,36 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
     setSelectedChainId(data.chainId);
     setDecimals(JPYC_DECIMALS);
   }, [initialStep]);
+
+  // パーマリンクフローではトークンシンボルが未取得のため、qrAData 確定時に取得する
+  useEffect(() => {
+    if (!qrAData || tokenSymbol || !publicClient) return;
+    publicClient
+      .readContract({ address: qrAData.token, abi: ERC20_ABI, functionName: "symbol" })
+      .then((sym) => setTokenSymbol(sym as string))
+      .catch(() => {});
+  }, [qrAData, tokenSymbol, publicClient]);
+
+  // QR_A 表示中: deadline までのカウントダウンを毎秒更新する
+  useEffect(() => {
+    if (!qrAData) return;
+    const update = () => {
+      const remaining = qrAData.deadline - Math.floor(Date.now() / 1000);
+      if (remaining <= 0) {
+        setCountdown("期限切れ");
+        return;
+      }
+      const h = Math.floor(remaining / 3600);
+      const m = Math.floor((remaining % 3600) / 60);
+      const s = remaining % 60;
+      setCountdown(
+        `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+      );
+    };
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [qrAData]);
 
   // リレーセッション確立時に WS 接続し、署名データを待機する
   useEffect(() => {
@@ -549,10 +582,42 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
         const permalink = receiverRequestUrl(permalinkData);
         return (
           <>
-            <QRDisplay
-              value={senderUrl(qrAData)}
-              label="送金者にスキャンしてもらってください"
-            />
+            {/* グラデーションカード */}
+            <div style={{
+              background: "linear-gradient(150deg, #0a1628 0%, #0d47a1 55%, #29b6f6 100%)",
+              borderRadius: 20,
+              padding: "28px 24px 20px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 16,
+              boxShadow: "0 6px 24px rgba(13, 71, 161, 0.35)",
+            }}>
+              {/* タイトル */}
+              <p style={{ color: "white", fontSize: 18, fontWeight: 700, margin: 0, letterSpacing: "0.02em" }}>
+                {tokenSymbol ? `${tokenSymbol}で受け取る` : "受け取る"}
+              </p>
+
+              {/* QRコード (白背景は QRDisplay 内部が保持) */}
+              <QRDisplay value={senderUrl(qrAData)} />
+
+              {/* 案内テキスト */}
+              <p style={{ color: "rgba(255,255,255,0.92)", fontSize: 14, margin: 0, textAlign: "center" }}>
+                送金者にスキャンしてもらってください
+              </p>
+
+              {/* カウントダウン */}
+              <p style={{
+                color: "rgba(255,255,255,0.55)",
+                fontSize: 12,
+                margin: 0,
+                fontFamily: "monospace",
+                letterSpacing: "0.08em",
+              }}>
+                {countdown}
+              </p>
+            </div>
+
             <div style={styles.card}>
               {relaySession ? (
                 <p style={styles.hint}>
