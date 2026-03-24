@@ -417,6 +417,23 @@ export default function SenderFlow() {
                     エクスプローラーで確認する
                   </a>
                 )}
+                <div style={{ marginTop: 16 }}>
+                  <button
+                    style={{
+                      padding: "10px 28px",
+                      fontSize: 15,
+                      fontWeight: 600,
+                      borderRadius: 8,
+                      border: "none",
+                      cursor: "pointer",
+                      background: "#6c757d",
+                      color: "white",
+                    }}
+                    onClick={() => window.close()}
+                  >
+                    閉じる
+                  </button>
+                </div>
               </div>
             );
           })()}

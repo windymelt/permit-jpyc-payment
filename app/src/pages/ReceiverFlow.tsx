@@ -160,6 +160,7 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
   const [qrBData, setQrBData] = useState<QRbData | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [loadingToken, setLoadingToken] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [estimatedGas, setEstimatedGas] = useState<string | null>(null);
   const [insufficientBalance, setInsufficientBalance] = useState(false);
 
@@ -324,72 +325,76 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
   // R-1: QR_A 生成
   const handleCreateRequest = useCallback(async () => {
     setFormError(null);
+    setGenerating(true);
 
-    if (!address) {
-      setFormError("ウォレットを接続してください");
-      return;
-    }
-    if (!tokenAddress.startsWith("0x")) {
-      setFormError("トークンアドレスを正しく入力してください");
-      return;
-    }
-    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
-      setFormError("金額を正しく入力してください");
-      return;
-    }
-
-    let dec = decimals;
-    let sym = tokenSymbol;
-
-    // decimals は常にコントラクトから取得する（ハードコード値に依存しない）
-    if (publicClient) {
-      setLoadingToken(true);
-      try {
-        const [fetchedSym, fetchedDec] = await Promise.all([
-          publicClient.readContract({
-            address: tokenAddress as `0x${string}`,
-            abi: ERC20_ABI,
-            functionName: "symbol",
-          }),
-          publicClient.readContract({
-            address: tokenAddress as `0x${string}`,
-            abi: ERC20_ABI,
-            functionName: "decimals",
-          }),
-        ]);
-        sym = fetchedSym as string;
-        dec = fetchedDec as number;
-        setTokenSymbol(sym);
-        setDecimals(dec);
-      } catch {
-        setFormError("トークン情報の取得に失敗しました");
-        setLoadingToken(false);
+    try {
+      if (!address) {
+        setFormError("ウォレットを接続してください");
         return;
-      } finally {
-        setLoadingToken(false);
       }
+      if (!tokenAddress.startsWith("0x")) {
+        setFormError("トークンアドレスを正しく入力してください");
+        return;
+      }
+      if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+        setFormError("金額を正しく入力してください");
+        return;
+      }
+
+      let dec = decimals;
+      let sym = tokenSymbol;
+
+      // decimals は常にコントラクトから取得する（ハードコード値に依存しない）
+      if (publicClient) {
+        setLoadingToken(true);
+        try {
+          const [fetchedSym, fetchedDec] = await Promise.all([
+            publicClient.readContract({
+              address: tokenAddress as `0x${string}`,
+              abi: ERC20_ABI,
+              functionName: "symbol",
+            }),
+            publicClient.readContract({
+              address: tokenAddress as `0x${string}`,
+              abi: ERC20_ABI,
+              functionName: "decimals",
+            }),
+          ]);
+          sym = fetchedSym as string;
+          dec = fetchedDec as number;
+          setTokenSymbol(sym);
+          setDecimals(dec);
+        } catch {
+          setFormError("トークン情報の取得に失敗しました");
+          return;
+        } finally {
+          setLoadingToken(false);
+        }
+      }
+
+      const value = parseUnits(amount, dec);
+      const deadline = Math.floor(Date.now() / 1000) + deadlineMinutes * 60;
+
+      // リレーセッション作成を試みる (失敗してもQRフォールバックで継続)
+      const session = await createSession(deadline);
+      if (session) setRelaySession(session);
+
+      const data: QRaData = {
+        type: "permit-request",
+        chainId: selectedChainId,
+        token: tokenAddress as `0x${string}`,
+        receiver: address,
+        value: value.toString(),
+        decimals: dec,
+        deadline,
+        ...(session && RELAY_URL ? { sessionId: session.sessionId, relayUrl: RELAY_URL } : {}),
+      };
+
+      setQrAData(data);
+      setStep("R-2");
+    } finally {
+      setGenerating(false);
     }
-
-    const value = parseUnits(amount, dec);
-    const deadline = Math.floor(Date.now() / 1000) + deadlineMinutes * 60;
-
-    // リレーセッション作成を試みる (失敗してもQRフォールバックで継続)
-    const session = await createSession(deadline);
-    if (session) setRelaySession(session);
-
-    const data: QRaData = {
-      type: "permit-request",
-      chainId: selectedChainId,
-      token: tokenAddress as `0x${string}`,
-      receiver: address,
-      value: value.toString(),
-      decimals: dec,
-      deadline,
-      ...(session && RELAY_URL ? { sessionId: session.sessionId, relayUrl: RELAY_URL } : {}),
-    };
-
-    setQrAData(data);
-    setStep("R-2");
   }, [address, tokenAddress, amount, decimals, deadlineMinutes, selectedChainId, tokenSymbol, publicClient]);
 
   // R-2b: QR_B スキャン
@@ -505,6 +510,7 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
 
   return (
     <div style={styles.root}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       <div style={styles.header}>
         <button style={styles.backButton} onClick={() => navigate("/")}>
           &#8592;
@@ -514,7 +520,7 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
           {step === "R-1" && " - リクエスト作成"}
           {step === "R-2" && " - QRコードを表示する"}
           {step === "R-2b" && " - 署名QRスキャン"}
-          {step === "R-3" && " - 送信確認"}
+          {step === "R-3" && " - 送金確認"}
           {step === "R-4" && " - 完了"}
         </h2>
       </div>
@@ -528,7 +534,31 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
 
       {/* R-1: リクエスト作成フォーム */}
       {step === "R-1" && (
-        <>
+        <div style={{ position: "relative" }}>
+          {generating && (
+            <div style={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 10,
+              background: "rgba(255,255,255,0.82)",
+              borderRadius: 12,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 12,
+            }}>
+              <div style={{
+                width: 32,
+                height: 32,
+                border: "3px solid #dee2e6",
+                borderTopColor: "#0d6efd",
+                borderRadius: "50%",
+                animation: "spin 0.8s linear infinite",
+              }} />
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "#495057" }}>生成中...</p>
+            </div>
+          )}
           {/* モード切替タブ */}
           <div style={{ display: "flex", gap: 0, borderRadius: 10, overflow: "hidden", border: "1px solid #dee2e6" }}>
             {(["simple", "advanced"] as const).map((mode) => (
@@ -695,7 +725,7 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
               </button>
             </div>
           )}
-        </>
+        </div>
       )}
 
       {/* R-2: QR_A 表示（送金者がスキャンするとアプリが開く） */}
@@ -873,7 +903,7 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
             onClick={handleSubmit}
             disabled={isPending || isTxPending || !isConnected || insufficientBalance}
           >
-            {isPending || isTxPending ? "送信中..." : "送信する (ガス代を支払う)"}
+            {isPending || isTxPending ? "決済中..." : "受け取る (ガス代を支払う)"}
           </button>
         </>
       )}
@@ -885,7 +915,7 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
         return (
           <div style={styles.successCard}>
             <p style={{ fontWeight: 700, fontSize: 18, margin: "0 0 12px" }}>
-              送金完了
+              🎉受け取りました🎉
             </p>
             <p style={{ margin: "0 0 8px", fontSize: 14 }}>トランザクションハッシュ:</p>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
