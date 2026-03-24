@@ -8,7 +8,7 @@ const styles = {
     maxWidth: 480,
     margin: "0 auto",
     padding: "0 16px",
-    minHeight: "100vh",
+    minHeight: "80vh",
     display: "flex",
     flexDirection: "column" as const,
   },
@@ -52,7 +52,9 @@ export default function App() {
           <p style={styles.footerText}>
             ※ 本サービス（コンテンツ・作品等）はJPYC株式会社による公式コンテンツではありません。<br />
             ※ 「JPYC」はJPYC株式会社の提供するステーブルコインです。<br />
-            ※ JPYC及びJPYCロゴは、JPYC株式会社の登録商標です。
+            ※ JPYC及びJPYCロゴは、JPYC株式会社の登録商標です。<br />
+            ※ 本サービスを利用したことによって生じる一切の損害を作者は負わないものとし、利用者がこのサービスを利用したとき、これに合意したものとします。<br />
+            ※ 本サービスは MIT ライセンスで提供されます。
           </p>
           <a
             href="https://github.com/windymelt/permit-jpyc-payment"

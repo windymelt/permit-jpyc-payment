@@ -510,9 +510,9 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
           &#8592;
         </button>
         <h2 style={styles.title}>
-          受取人フロー
+          もらう
           {step === "R-1" && " - リクエスト作成"}
-          {step === "R-2" && " - QR提示"}
+          {step === "R-2" && " - QRコードを表示する"}
           {step === "R-2b" && " - 署名QRスキャン"}
           {step === "R-3" && " - 送信確認"}
           {step === "R-4" && " - 完了"}

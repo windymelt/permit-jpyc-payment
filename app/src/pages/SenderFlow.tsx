@@ -282,7 +282,7 @@ export default function SenderFlow() {
           &#8592;
         </button>
         <h2 style={styles.title}>
-          送金者フロー
+          おくる
           {step === "S-1" && " - QRスキャン"}
           {step === "S-2" && " - 内容確認"}
           {step === "S-3" && " - 署名完了"}

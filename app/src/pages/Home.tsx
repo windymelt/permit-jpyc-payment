@@ -7,7 +7,7 @@ const styles = {
     flexDirection: "column" as const,
     alignItems: "center",
     justifyContent: "center",
-    minHeight: "100vh",
+    minHeight: "80vh",
     gap: 24,
   },
   title: {
@@ -70,11 +70,13 @@ export default function Home() {
 
   return (
     <div style={styles.root}>
-      <h1 style={styles.title}>Permit Payment</h1>
+      <h1 style={styles.title}>JPYC™ペイ</h1>
       <p style={styles.subtitle}>
-        ERC-2612 を使ったガスレス送金 dApp
+        登録不要・手数料不要でJPYC™を送金できます
         <br />
         あなたの役割を選んでください
+        <br />
+        もらう側が準備したQRコードを、おくる側が読み取ります
       </p>
 
       <div style={styles.buttonRow}>
@@ -92,24 +94,26 @@ export default function Home() {
         >
           おくる
           <br />
-          <span style={{ fontSize: 13, fontWeight: 400 }}>QRをスキャンする側</span>
+          <span style={{ fontSize: 13, fontWeight: 400 }}>QRを読み取る側</span>
         </button>
       </div>
 
       <ConnectButton />
 
+      <div style={{ fontSize: 13, color: "#6c757d" }}>
+          対応ウォレット: MetaMask (送金)
+          <br/>
+          ERC-2612 に対応するすべてのウォレットで着金できます
+      </div>
+
       <div style={styles.howItWorks}>
         <p style={styles.howItWorksTitle}>仕組み</p>
         <p style={styles.howItWorksBody}>
           ERC-2612 (Permit) という標準規格を利用しています。
-          送金者はトークンの送金許可に署名するだけで、実際の送金トランザクションは受取人側が実行します。
+          送金者はトークンの送金依頼に署名するだけで、実際の送金トランザクションは受取人側が実行します。
           コントラクトが仲介することで、送金にかかるガス代を受取人が負担する「着払い」の送金が実現できます。
           ちょうど、小切手に署名してもらい、自分でお金を受け取りに行くのと同じです。
         </p>
-      </div>
-
-      <div style={{ fontSize: 13, color: "#6c757d" }}>
-        対応ウォレット: MetaMask
       </div>
     </div>
   );
