@@ -54,6 +54,14 @@ export default function App() {
             ※ 「JPYC」はJPYC株式会社の提供するステーブルコインです。<br />
             ※ JPYC及びJPYCロゴは、JPYC株式会社の登録商標です。
           </p>
+          <a
+            href="https://github.com/windymelt/permit-jpyc-payment"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ fontSize: 10, color: "#adb5bd" }}
+          >
+            github.com/windymelt/permit-jpyc-payment
+          </a>
         </footer>
       </div>
     </BrowserRouter>

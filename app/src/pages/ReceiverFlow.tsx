@@ -159,6 +159,7 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
   const [formError, setFormError] = useState<string | null>(null);
   const [loadingToken, setLoadingToken] = useState(false);
   const [estimatedGas, setEstimatedGas] = useState<string | null>(null);
+  const [insufficientBalance, setInsufficientBalance] = useState(false);
 
   // リレー関連
   const [relaySession, setRelaySession] = useState<RelaySession | null>(null);
@@ -410,7 +411,25 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
   useEffect(() => {
     if (!qrBData || !chainConfig || !publicClient || !address) return;
 
+    setInsufficientBalance(false);
+
     const estimate = async () => {
+      // 送金者の残高チェック
+      try {
+        const balance = await publicClient.readContract({
+          address: qrBData.token,
+          abi: ERC20_ABI,
+          functionName: "balanceOf",
+          args: [qrBData.owner],
+        }) as bigint;
+        if (balance < BigInt(qrBData.value)) {
+          setInsufficientBalance(true);
+          return;
+        }
+      } catch {
+        // 残高取得失敗時はチェックをスキップしてトランザクションに任せる
+      }
+
       try {
         const [gasUnits, fees] = await Promise.all([
           publicClient.estimateContractGas({
@@ -637,6 +656,7 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
           decimals: qrAData.decimals,
         };
         const permalink = receiverRequestUrl(permalinkData);
+        const isExpired = countdown === "期限切れ";
         return (
           <>
             {/* グラデーションカード */}
@@ -655,21 +675,37 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
                 {tokenSymbol ? `${tokenSymbol}で受け取る` : "受け取る"}
               </p>
 
-              {/* QRコード (白背景は QRDisplay 内部が保持) */}
-              <QRDisplay value={senderUrl(qrAData)} />
+              {/* QRコード: 期限切れ時はグレイアウトオーバーレイを重ねる */}
+              <div style={{ position: "relative" }}>
+                <QRDisplay value={senderUrl(qrAData)} />
+                {isExpired && (
+                  <div style={{
+                    position: "absolute",
+                    inset: 0,
+                    background: "rgba(180, 180, 180, 0.78)",
+                    borderRadius: 16,
+                  }} />
+                )}
+              </div>
 
               {/* 案内テキスト */}
               <p style={{ color: "rgba(255,255,255,0.92)", fontSize: 14, margin: 0, textAlign: "center" }}>
                 送金者にスキャンしてもらってください
               </p>
 
-              {/* カウントダウン */}
+              {/* カウントダウン / 期限切れ表示 */}
               <p style={{
-                color: "rgba(255,255,255,0.55)",
-                fontSize: 12,
+                color: isExpired ? "#c0392b" : "rgba(255,255,255,0.55)",
+                fontSize: isExpired ? 14 : 12,
+                fontWeight: isExpired ? 700 : 400,
                 margin: 0,
                 fontFamily: "monospace",
                 letterSpacing: "0.08em",
+                ...(isExpired ? {
+                  background: "white",
+                  borderRadius: 8,
+                  padding: "4px 12px",
+                } : {}),
               }}>
                 {countdown}
               </p>
@@ -768,13 +804,21 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
             </div>
           </div>
 
+          {insufficientBalance && (
+            <p style={styles.errorText}>
+              送金者の残高が不足しています。送金者にトークン残高を確認してもらってください。
+            </p>
+          )}
           {writeError && <p style={styles.errorText}>{writeError.message}</p>}
           {formError && <p style={styles.errorText}>{formError}</p>}
 
           <button
-            style={styles.button}
+            style={{
+              ...styles.button,
+              ...(insufficientBalance ? { background: "#adb5bd", cursor: "not-allowed" } : {}),
+            }}
             onClick={handleSubmit}
-            disabled={isPending || isTxPending || !isConnected}
+            disabled={isPending || isTxPending || !isConnected || insufficientBalance}
           >
             {isPending || isTxPending ? "送信中..." : "送信する (ガス代を支払う)"}
           </button>

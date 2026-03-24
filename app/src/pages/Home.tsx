@@ -106,6 +106,10 @@ export default function Home() {
           コントラクトが仲介することで、送金にかかるガス代を受取人が負担する「着払い」の送金が実現できます。
         </p>
       </div>
+
+      <div style={{ fontSize: 13, color: "#6c757d" }}>
+        対応ウォレット: MetaMask
+      </div>
     </div>
   );
 }
