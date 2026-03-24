@@ -148,6 +148,7 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
   const [selectedChainId, setSelectedChainId] = useState<number>(
     connectedChainId ?? 137
   );
+  const [tokenMode, setTokenMode] = useState<"jpyc" | "manual">("jpyc");
   const [tokenAddress, setTokenAddress] = useState<string>("");
   const [amount, setAmount] = useState<string>("");
   const [decimals, setDecimals] = useState<number>(JPYC_DECIMALS);
@@ -296,13 +297,18 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
     }
   }, [isTxSuccess, step, txHash]);
 
-  const handlePresetJPYC = () => {
-    if (chainConfig) {
-      setTokenAddress(chainConfig.jpycAddress);
+  // JPYC モード時: チェーン変更に追従してアドレスを自動設定する
+  useEffect(() => {
+    if (tokenMode !== "jpyc") return;
+    const cfg = getChainConfig(selectedChainId);
+    if (cfg) {
+      setTokenAddress(cfg.jpycAddress);
       setTokenSymbol("JPYC");
-      // decimals はQR生成時にコントラクトから取得するため、ここでは設定しない
+    } else {
+      setTokenAddress("");
+      setTokenSymbol("");
     }
-  };
+  }, [tokenMode, selectedChainId]);
 
   // R-1: QR_A 生成
   const handleCreateRequest = useCallback(async () => {
@@ -510,21 +516,72 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
           </div>
 
           <div style={styles.formGroup}>
-            <label style={styles.label}>トークンアドレス</label>
-            <button
-              style={{ ...styles.button, padding: "8px", fontSize: 13, marginBottom: 6 }}
-              onClick={handlePresetJPYC}
-              type="button"
-            >
-              JPYC をプリセット
-            </button>
-            <input
-              style={styles.input}
-              type="text"
-              placeholder="0x..."
-              value={tokenAddress}
-              onChange={(e) => setTokenAddress(e.target.value)}
-            />
+            <label style={styles.label}>トークン</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {/* JPYC 選択肢 */}
+              <label style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "10px 14px",
+                border: `2px solid ${tokenMode === "jpyc" ? "#0d6efd" : "#ced4da"}`,
+                borderRadius: 8,
+                cursor: "pointer",
+                background: tokenMode === "jpyc" ? "#f0f6ff" : "white",
+              }}>
+                <input
+                  type="radio"
+                  name="tokenMode"
+                  value="jpyc"
+                  checked={tokenMode === "jpyc"}
+                  onChange={() => setTokenMode("jpyc")}
+                  style={{ accentColor: "#0d6efd", width: 16, height: 16 }}
+                />
+                <span style={{ fontSize: 14, fontWeight: tokenMode === "jpyc" ? 600 : 400 }}>
+                  JPYC
+                </span>
+              </label>
+
+              {/* 手動入力選択肢 */}
+              <label style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "10px 14px",
+                border: `2px solid ${tokenMode === "manual" ? "#0d6efd" : "#ced4da"}`,
+                borderRadius: 8,
+                cursor: "pointer",
+                background: tokenMode === "manual" ? "#f0f6ff" : "white",
+              }}>
+                <input
+                  type="radio"
+                  name="tokenMode"
+                  value="manual"
+                  checked={tokenMode === "manual"}
+                  onChange={() => {
+                    setTokenMode("manual");
+                    setTokenAddress("");
+                    setTokenSymbol("");
+                  }}
+                  style={{ accentColor: "#0d6efd", width: 16, height: 16 }}
+                />
+                <span style={{ fontSize: 14, fontWeight: tokenMode === "manual" ? 600 : 400 }}>
+                  手動で入力
+                </span>
+              </label>
+
+              {/* 手動入力時のみテキストボックスを表示 */}
+              {tokenMode === "manual" && (
+                <input
+                  style={styles.input}
+                  type="text"
+                  placeholder="0x..."
+                  value={tokenAddress}
+                  onChange={(e) => setTokenAddress(e.target.value)}
+                  autoFocus
+                />
+              )}
+            </div>
           </div>
 
           <div style={styles.formGroup}>
