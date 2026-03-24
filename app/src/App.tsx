@@ -20,6 +20,8 @@ export default function App() {
           <Route path="/" element={<Home />} />
           {/* /receiver - R-1 リクエスト作成 */}
           <Route path="/receiver" element={<ReceiverFlow />} />
+          {/* /receiver/request - パーマリンクからQR_A直接表示 */}
+          <Route path="/receiver/request" element={<ReceiverFlow initialStep="R-2" />} />
           {/* /receiver/scan - QR_B スキャン画面 */}
           <Route path="/receiver/scan" element={<ReceiverFlow initialStep="R-2b" />} />
           {/* /receiver/confirm#<base64(QR_B)> - QR_B スキャン後の確認・送信画面 */}

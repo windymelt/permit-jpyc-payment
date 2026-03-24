@@ -28,16 +28,31 @@ function toMetaMaskDeepLink(url: string): string {
   return `${METAMASK_DEEPLINK_BASE}${host}${pathname}${hash}`;
 }
 
-/// 送り手が開くURL（QR_A に埋め込む）
+/// 送金者が開くURL（QR_A に埋め込む）
 export function senderUrl(data: unknown): string {
   const url = `${APP_URL}/sender#${encodeFragment(data)}`;
   return toMetaMaskDeepLink(url);
 }
 
-/// 受け手の確認画面URL（QR_B に埋め込む）
-/// 受け手はすでにアプリを開いているため、MetaMask deep link は不要。
+/// 受取人の確認画面URL（QR_B に埋め込む）
+/// 受取人はすでにアプリを開いているため、MetaMask deep link は不要。
 export function receiverConfirmUrl(data: unknown): string {
   return `${APP_URL}/receiver/confirm#${encodeFragment(data)}`;
+}
+
+/// パーマリンク用データ型（deadline を除いた QRaData のサブセット）
+export interface PermalinkData {
+  type: "permit-request";
+  chainId: number;
+  token: `0x${string}`;
+  receiver: `0x${string}`;
+  value: string;
+  decimals: number;
+}
+
+/// 受取人のパーマリンクURL（QR表示画面を直接開く）
+export function receiverRequestUrl(data: PermalinkData): string {
+  return `${APP_URL}/receiver/request#${encodeFragment(data)}`;
 }
 
 /// 現在のURLフラグメントからデータを取り出す。なければ null。

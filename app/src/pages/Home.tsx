@@ -44,6 +44,25 @@ const styles = {
     borderColor: "#198754",
     color: "#198754",
   },
+  howItWorks: {
+    maxWidth: 480,
+    padding: "20px 24px",
+    background: "#f8f9fa",
+    borderRadius: 12,
+    border: "1px solid #e9ecef",
+    textAlign: "left" as const,
+  },
+  howItWorksTitle: {
+    fontSize: 15,
+    fontWeight: 700,
+    margin: "0 0 8px",
+  },
+  howItWorksBody: {
+    fontSize: 13,
+    lineHeight: 1.7,
+    color: "#495057",
+    margin: 0,
+  },
 } as const;
 
 export default function Home() {
@@ -63,7 +82,7 @@ export default function Home() {
           style={{ ...styles.roleButton, ...styles.receiverButton }}
           onClick={() => navigate("/receiver")}
         >
-          受け手
+          受取人
           <br />
           <span style={{ fontSize: 13, fontWeight: 400 }}>QRを提示する側</span>
         </button>
@@ -71,13 +90,22 @@ export default function Home() {
           style={{ ...styles.roleButton, ...styles.senderButton }}
           onClick={() => navigate("/sender")}
         >
-          送り手
+          送金者
           <br />
           <span style={{ fontSize: 13, fontWeight: 400 }}>QRをスキャンする側</span>
         </button>
       </div>
 
       <ConnectButton />
+
+      <div style={styles.howItWorks}>
+        <p style={styles.howItWorksTitle}>仕組み</p>
+        <p style={styles.howItWorksBody}>
+          ERC-2612 (Permit) という標準規格を利用しています。
+          送金者はトークンの送金許可に署名するだけで、実際の送金トランザクションは受取人側が実行します。
+          コントラクトが仲介することで、送金にかかるガス代を受取人が負担する「着払い」の送金が実現できます。
+        </p>
+      </div>
     </div>
   );
 }

@@ -226,7 +226,7 @@ export default function SenderFlow() {
           &#8592;
         </button>
         <h2 style={styles.title}>
-          送り手フロー
+          送金者フロー
           {step === "S-1" && " - QRスキャン"}
           {step === "S-2" && " - 内容確認"}
           {step === "S-3" && " - 署名完了"}
@@ -245,7 +245,7 @@ export default function SenderFlow() {
         <>
           <div style={styles.card}>
             <p style={styles.hint}>
-              受け手のQRコードをスキャンしてください。
+              受取人のQRコードをスキャンしてください。
               <br />
               カメラアプリから直接開くこともできます。
             </p>
@@ -289,15 +289,15 @@ export default function SenderFlow() {
         </>
       )}
 
-      {/* S-3: QR_B URL を表示（受け手がスキャンすると確認画面へ） */}
+      {/* S-3: QR_B URL を表示（受取人がスキャンすると確認画面へ） */}
       {step === "S-3" && qrBUrl && (
         <>
           <QRDisplay
             value={qrBUrl}
-            label="受け手にスキャンしてもらってください"
+            label="受取人にスキャンしてもらってください"
           />
           <p style={styles.hint}>
-            受け手がスキャンすると送信確認画面が開きます。
+            受取人がスキャンすると送信確認画面が開きます。
           </p>
         </>
       )}

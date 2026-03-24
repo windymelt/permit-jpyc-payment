@@ -7,7 +7,7 @@ import QRDisplay from "../components/QRDisplay";
 import { getChainConfig, CHAIN_CONFIGS } from "../lib/chains";
 import { PERMIT_PAYMENT_ABI, ERC20_ABI } from "../lib/contracts";
 import QRScanner from "../components/QRScanner";
-import { senderUrl, readFragment, decodeFragment } from "../lib/qrUrl";
+import { senderUrl, readFragment, decodeFragment, receiverRequestUrl, type PermalinkData } from "../lib/qrUrl";
 import {
   JPYC_DECIMALS,
   JPYC_ALLOWLIST_THRESHOLD,
@@ -155,6 +155,20 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
   const { isLoading: isTxPending, isSuccess: isTxSuccess } = useWaitForTransactionReceipt({
     hash: txHash,
   });
+
+  // /receiver/request#<base64(PermalinkData)> で直接開かれた場合、フラグメントからデータを読む
+  useEffect(() => {
+    if (initialStep !== "R-2") return;
+    const data = readFragment<PermalinkData>();
+    if (!data || data.type !== "permit-request") {
+      setFormError("URLが無効です");
+      return;
+    }
+    const deadline = Math.floor(Date.now() / 1000) + DEFAULT_DEADLINE_MINUTES * 60;
+    setQrAData({ ...data, deadline });
+    setSelectedChainId(data.chainId);
+    setDecimals(data.decimals);
+  }, [initialStep]);
 
   // /receiver/confirm#<base64(QR_B)> で直接開かれた場合、フラグメントからデータを読む
   useEffect(() => {
@@ -348,7 +362,7 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
           &#8592;
         </button>
         <h2 style={styles.title}>
-          受け手フロー
+          受取人フロー
           {step === "R-1" && " - リクエスト作成"}
           {step === "R-2" && " - QR提示"}
           {step === "R-2b" && " - 署名QRスキャン"}
@@ -442,30 +456,66 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
         </div>
       )}
 
-      {/* R-2: QR_A 表示（送り手がスキャンするとアプリが開く） */}
-      {step === "R-2" && qrAData && (
-        <>
-          <QRDisplay
-            value={senderUrl(qrAData)}
-            label="送り手にスキャンしてもらってください"
-          />
-          <div style={styles.card}>
-            <p style={styles.hint}>
-              送り手がスキャンするとアプリが開き、署名画面に進みます。
-              <br />
-              署名完了後、送り手の画面に表示されたQRコードをスキャンしてください。
-            </p>
-          </div>
-          <button
-            style={styles.button}
-            onClick={() => setStep("R-2b")}
-          >
-            署名QRをスキャンする
-          </button>
-        </>
-      )}
+      {/* R-2: QR_A 表示（送金者がスキャンするとアプリが開く） */}
+      {step === "R-2" && qrAData && (() => {
+        const permalinkData: PermalinkData = {
+          type: qrAData.type,
+          chainId: qrAData.chainId,
+          token: qrAData.token,
+          receiver: qrAData.receiver,
+          value: qrAData.value,
+          decimals: qrAData.decimals,
+        };
+        const permalink = receiverRequestUrl(permalinkData);
+        return (
+          <>
+            <QRDisplay
+              value={senderUrl(qrAData)}
+              label="送金者にスキャンしてもらってください"
+            />
+            <div style={styles.card}>
+              <p style={styles.hint}>
+                送金者がスキャンするとアプリが開き、署名画面に進みます。
+                <br />
+                署名完了後、送金者の画面に表示されたQRコードをスキャンしてください。
+              </p>
+            </div>
+            <div style={styles.card}>
+              <p style={{ ...styles.label, marginBottom: 8 }}>パーマリンク (同条件で繰り返し利用)</p>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  style={{ ...styles.input, flex: 1, minWidth: 0, fontSize: 12 }}
+                  type="text"
+                  readOnly
+                  value={permalink}
+                />
+                <button
+                  style={{
+                    padding: "10px 14px",
+                    fontSize: 13,
+                    border: "1px solid #ced4da",
+                    borderRadius: 8,
+                    background: "#f8f9fa",
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                  onClick={() => navigator.clipboard.writeText(permalink)}
+                >
+                  コピー
+                </button>
+              </div>
+            </div>
+            <button
+              style={styles.button}
+              onClick={() => setStep("R-2b")}
+            >
+              署名QRをスキャンする
+            </button>
+          </>
+        );
+      })()}
 
-      {/* R-2b: QR_B スキャン（送り手の署名QRを読み取る） */}
+      {/* R-2b: QR_B スキャン（送金者の署名QRを読み取る） */}
       {step === "R-2b" && (
         <>
           <QRScanner onResult={handleQRBScan} onError={(e) => setFormError(e.message)} />
@@ -484,7 +534,7 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
         <>
           <div style={styles.card}>
             <div style={styles.infoRow}>
-              <span style={styles.infoLabel}>送り手</span>
+              <span style={styles.infoLabel}>送金者</span>
               <span style={styles.infoValue}>{qrBData.owner}</span>
             </div>
             <div style={styles.infoRow}>
@@ -521,15 +571,51 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
       )}
 
       {/* R-4: 完了 */}
-      {step === "R-4" && txHash && (
-        <div style={styles.successCard}>
-          <p style={{ fontWeight: 700, fontSize: 18, margin: "0 0 12px" }}>
-            送金完了
-          </p>
-          <p style={{ margin: "0 0 8px", fontSize: 14 }}>トランザクションハッシュ:</p>
-          <p style={styles.txHash}>{txHash}</p>
-        </div>
-      )}
+      {step === "R-4" && txHash && (() => {
+        const chainConfig = connectedChainId ? getChainConfig(connectedChainId) : undefined;
+        const explorerUrl = chainConfig ? `${chainConfig.explorerTxUrl}${txHash}` : undefined;
+        return (
+          <div style={styles.successCard}>
+            <p style={{ fontWeight: 700, fontSize: 18, margin: "0 0 12px" }}>
+              送金完了
+            </p>
+            <p style={{ margin: "0 0 8px", fontSize: 14 }}>トランザクションハッシュ:</p>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <p style={{ ...styles.txHash, margin: 0, flex: 1, minWidth: 0 }}>{txHash}</p>
+              <button
+                style={{
+                  padding: "4px 10px",
+                  fontSize: 13,
+                  border: "1px solid #ccc",
+                  borderRadius: 6,
+                  background: "#f5f5f5",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+                onClick={() => navigator.clipboard.writeText(txHash)}
+              >
+                コピー
+              </button>
+            </div>
+            {explorerUrl && (
+              <a
+                href={explorerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: "inline-block",
+                  marginTop: 12,
+                  fontSize: 14,
+                  color: "#1a73e8",
+                  textDecoration: "underline",
+                }}
+              >
+                エクスプローラーで確認する
+              </a>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
