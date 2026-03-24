@@ -905,6 +905,36 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
           >
             {isPending || isTxPending ? "決済中..." : "受け取る (ガス代を支払う)"}
           </button>
+
+          {/* MetaMask 操作中オーバーレイ */}
+          {(isPending || isTxPending) && (
+            <div style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 9999,
+              background: "rgba(0, 0, 0, 0.72)",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 16,
+            }}>
+              <div style={{
+                width: 40,
+                height: 40,
+                border: "4px solid rgba(255,255,255,0.25)",
+                borderTopColor: "white",
+                borderRadius: "50%",
+                animation: "spin 0.8s linear infinite",
+              }} />
+              <p style={{ color: "white", fontSize: 18, fontWeight: 700, margin: 0 }}>
+                {isPending ? "ウォレットで承認してください" : "トランザクション処理中..."}
+              </p>
+              <p style={{ color: "rgba(255,255,255,0.6)", fontSize: 14, margin: 0 }}>
+                {isPending ? "MetaMask等のウォレットに切り替えて操作してください" : "ブロックチェーンで確認中です。しばらくお待ちください"}
+              </p>
+            </div>
+          )}
         </>
       )}
 

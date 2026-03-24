@@ -1,4 +1,4 @@
-import { type WalletClient, type PublicClient } from "viem";
+import { type WalletClient, type PublicClient, domainSeparator } from "viem";
 import { ERC20_PERMIT_ABI } from "./contracts";
 
 export interface PermitSignatureResult {
@@ -44,14 +44,24 @@ export async function signPermit(params: {
     domainName = result[1];
     domainVersion = result[2];
   } catch {
-    // eip712Domain() 未対応の場合、name() と version "1" にフォールバック
+    // eip712Domain() 未対応の場合、name() と version() から取得する
+    // version() も未対応なら "1" にフォールバック
     const name = await publicClient.readContract({
       address: tokenAddress,
       abi: ERC20_PERMIT_ABI,
       functionName: "name",
     });
     domainName = name as string;
-    domainVersion = "1";
+    try {
+      const ver = await publicClient.readContract({
+        address: tokenAddress,
+        abi: ERC20_PERMIT_ABI,
+        functionName: "version",
+      });
+      domainVersion = ver as string;
+    } catch {
+      domainVersion = "1";
+    }
   }
 
   const nonce = await publicClient.readContract({
@@ -67,6 +77,27 @@ export async function signPermit(params: {
     chainId,
     verifyingContract: tokenAddress,
   } as const;
+
+  // DOMAIN_SEPARATOR 検証: 構築したドメインがコントラクトと一致するか確認する
+  const computedSeparator = domainSeparator({ domain });
+  const onChainSeparator = await publicClient.readContract({
+    address: tokenAddress,
+    abi: ERC20_PERMIT_ABI,
+    functionName: "DOMAIN_SEPARATOR",
+  }) as `0x${string}`;
+
+  if (computedSeparator !== onChainSeparator) {
+    console.error(
+      "DOMAIN_SEPARATOR mismatch",
+      { computed: computedSeparator, onChain: onChainSeparator, domain }
+    );
+    throw new Error(
+      `DOMAIN_SEPARATOR が一致しません。` +
+      ` domain: name="${domainName}", version="${domainVersion}", chainId=${chainId}` +
+      ` computed=${computedSeparator}` +
+      ` onChain=${onChainSeparator}`
+    );
+  }
 
   const types = {
     Permit: [

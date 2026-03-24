@@ -65,6 +65,13 @@ export const ERC20_PERMIT_ABI = [
     outputs: [{ type: "bytes32" }],
   },
   {
+    name: "version",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "string" }],
+  },
+  {
     name: "eip712Domain",
     type: "function",
     stateMutability: "view",
