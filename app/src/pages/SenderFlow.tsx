@@ -98,6 +98,7 @@ export default function SenderFlow() {
   const [signing, setSigning] = useState(false);
   const [txComplete, setTxComplete] = useState<string | null>(null); // txHash
   const [relayConnected, setRelayConnected] = useState(false);
+  const [tokenBalance, setTokenBalance] = useState<bigint | null>(null);
   // フラグメント確認が完了するまで QRScanner をマウントしない
   // (フラグメントありの場合は S-2 へ遷移するためスキャナーは不要)
   const [scannerReady, setScannerReady] = useState(false);
@@ -146,6 +147,16 @@ export default function SenderFlow() {
       onError: () => setError(`チェーンを ${qrAData.chainId} に切り替えてください`),
     });
   }, [qrAData, chainId, switchChain]);
+
+  // qrAData と address が揃ったらトークン残高を取得する
+  useEffect(() => {
+    if (!qrAData || !address || !publicClient) return;
+    setTokenBalance(null);
+    publicClient
+      .readContract({ address: qrAData.token, abi: ERC20_ABI, functionName: "balanceOf", args: [address] })
+      .then((bal) => setTokenBalance(bal as bigint))
+      .catch(() => setTokenBalance(null));
+  }, [qrAData, address, publicClient]);
 
   // S-1: QR_A スキャン（手動スキャン時のフォールバック）
   const handleQRAScan = useCallback(
@@ -305,6 +316,27 @@ export default function SenderFlow() {
       {/* S-2: 内容確認 */}
       {step === "S-2" && qrAData && (
         <>
+          {/* 残高推移表示 */}
+          <div style={{ ...styles.card, textAlign: "center" as const }}>
+            {tokenBalance === null ? (
+              <p style={{ margin: 0, fontSize: 15, color: "#6c757d" }}>残高取得中...</p>
+            ) : (() => {
+              const after = tokenBalance - BigInt(qrAData.value);
+              const fmtBefore = formatUnits(tokenBalance, tokenDecimals);
+              const fmtAfter = formatUnits(after >= 0n ? after : 0n, tokenDecimals);
+              const insufficient = after < 0n;
+              return (
+                <p style={{ margin: 0, fontSize: 17, fontWeight: 600, letterSpacing: "0.01em" }}>
+                  <span>{Number(fmtBefore).toLocaleString("ja-JP", { maximumFractionDigits: 6 })} {tokenSymbol}</span>
+                  <span style={{ margin: "0 10px", color: "#6c757d", fontWeight: 400 }}>→</span>
+                  <span style={{ color: insufficient ? "#dc3545" : "#198754" }}>
+                    {insufficient ? "残高不足" : `${Number(fmtAfter).toLocaleString("ja-JP", { maximumFractionDigits: 6 })} ${tokenSymbol}`}
+                  </span>
+                </p>
+              );
+            })()}
+          </div>
+
           <div style={styles.card}>
             <div style={styles.row}>
               <span style={styles.label}>送り先</span>
