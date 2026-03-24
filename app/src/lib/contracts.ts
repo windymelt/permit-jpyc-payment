@@ -58,13 +58,6 @@ export const ERC20_PERMIT_ABI = [
     outputs: [{ type: "uint256" }],
   },
   {
-    name: "DOMAIN_SEPARATOR",
-    type: "function",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ type: "bytes32" }],
-  },
-  {
     name: "version",
     type: "function",
     stateMutability: "view",
