@@ -98,6 +98,9 @@ export default function SenderFlow() {
   const [signing, setSigning] = useState(false);
   const [txComplete, setTxComplete] = useState<string | null>(null); // txHash
   const [relayConnected, setRelayConnected] = useState(false);
+  // フラグメント確認が完了するまで QRScanner をマウントしない
+  // (フラグメントありの場合は S-2 へ遷移するためスキャナーは不要)
+  const [scannerReady, setScannerReady] = useState(false);
 
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
@@ -106,9 +109,13 @@ export default function SenderFlow() {
   const publicClient = usePublicClient();
 
   // /sender#<base64(QR_A)> で直接開かれた場合、フラグメントからデータを読んで S-2 へ
+  // フラグメントがない場合のみ scannerReady を true にしてスキャナーを表示する
   useEffect(() => {
     const data = readFragment<QRaData>();
-    if (!data || data.type !== "permit-request") return;
+    if (!data || data.type !== "permit-request") {
+      setScannerReady(true);
+      return;
+    }
     loadQrAData(data);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -279,7 +286,9 @@ export default function SenderFlow() {
       )}
 
       {/* S-1: 手動スキャン（QR_A URLから開かれなかった場合のフォールバック） */}
-      {step === "S-1" && (
+      {/* scannerReady はフラグメント確認後に true になる。フラグメントありの場合は */}
+      {/* S-2 へ遷移済みのためスキャナーは表示されない。 */}
+      {step === "S-1" && scannerReady && (
         <>
           <div style={styles.card}>
             <p style={styles.hint}>
