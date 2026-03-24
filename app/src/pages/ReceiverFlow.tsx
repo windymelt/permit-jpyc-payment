@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWriteContract, useWaitForTransactionReceipt, useAccount, usePublicClient } from "wagmi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
@@ -8,6 +8,14 @@ import { getChainConfig, CHAIN_CONFIGS } from "../lib/chains";
 import { PERMIT_PAYMENT_ABI, ERC20_ABI } from "../lib/contracts";
 import QRScanner from "../components/QRScanner";
 import { senderUrl, readFragment, decodeFragment, receiverRequestUrl, type PermalinkData } from "../lib/qrUrl";
+import {
+  createSession,
+  connectReceiverWs,
+  RELAY_URL,
+  type RelaySession,
+  type ReceiverIncomingMessage,
+  type ReceiverToSenderMessage,
+} from "../lib/relay";
 import {
   JPYC_DECIMALS,
   JPYC_ALLOWLIST_THRESHOLD,
@@ -26,6 +34,8 @@ interface QRaData {
   value: string;
   decimals: number;
   deadline: number;
+  sessionId?: string;   // リレーセッションID (リレー利用時のみ)
+  relayUrl?: string;    // リレーサーバーURL (リレー利用時のみ)
 }
 
 interface QRbData {
@@ -149,6 +159,10 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
   const [loadingToken, setLoadingToken] = useState(false);
   const [estimatedGas, setEstimatedGas] = useState<string | null>(null);
 
+  // リレー関連
+  const [relaySession, setRelaySession] = useState<RelaySession | null>(null);
+  const relayWsRef = useRef<WebSocket | null>(null);
+
   const chainConfig = getChainConfig(selectedChainId);
 
   const { writeContract, data: txHash, isPending, error: writeError } = useWriteContract();
@@ -159,15 +173,24 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
   // /receiver/request#<base64(PermalinkData)> で直接開かれた場合、フラグメントからデータを読む
   useEffect(() => {
     if (initialStep !== "R-2") return;
-    const data = readFragment<PermalinkData>();
-    if (!data || data.type !== "permit-request") {
+    const permalinkData = readFragment<PermalinkData>();
+    if (!permalinkData || permalinkData.type !== "permit-request") {
       setFormError("URLが無効です");
       return;
     }
     const deadline = Math.floor(Date.now() / 1000) + DEFAULT_DEADLINE_MINUTES * 60;
-    setQrAData({ ...data, deadline });
-    setSelectedChainId(data.chainId);
-    setDecimals(data.decimals);
+    setSelectedChainId(permalinkData.chainId);
+    setDecimals(permalinkData.decimals);
+
+    // リレーセッション作成を試みてからQRデータを確定する
+    createSession(deadline).then((session) => {
+      if (session) setRelaySession(session);
+      setQrAData({
+        ...permalinkData,
+        deadline,
+        ...(session && RELAY_URL ? { sessionId: session.sessionId, relayUrl: RELAY_URL } : {}),
+      });
+    });
   }, [initialStep]);
 
   // /receiver/confirm#<base64(QR_B)> で直接開かれた場合、フラグメントからデータを読む
@@ -183,10 +206,62 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
     setDecimals(JPYC_DECIMALS);
   }, [initialStep]);
 
-  // R-4 に移行
+  // リレーセッション確立時に WS 接続し、署名データを待機する
   useEffect(() => {
-    if (isTxSuccess && step === "R-3") setStep("R-4");
-  }, [isTxSuccess, step]);
+    if (!relaySession) return;
+    const ws = connectReceiverWs(relaySession.sessionId, relaySession.receiverToken);
+    if (!ws) return;
+    relayWsRef.current = ws;
+
+    ws.onmessage = (event: MessageEvent<string>) => {
+      let msg: ReceiverIncomingMessage;
+      try {
+        msg = JSON.parse(event.data) as ReceiverIncomingMessage;
+      } catch {
+        return;
+      }
+      if (msg.type === "signature") {
+        // 署名データが届いたので自動的に R-3 へ遷移
+        const p = msg.permit;
+        setQrBData({
+          type: "permit-signature",
+          chainId: p.chainId,
+          token: p.token as `0x${string}`,
+          owner: p.owner as `0x${string}`,
+          receiver: p.receiver as `0x${string}`,
+          value: p.value,
+          deadline: p.deadline,
+          v: p.v,
+          r: p.r as `0x${string}`,
+          s: p.s as `0x${string}`,
+        });
+        setSelectedChainId(p.chainId);
+        setStep("R-3");
+      }
+    };
+
+    ws.onerror = () => {
+      relayWsRef.current = null;
+    };
+
+    return () => {
+      ws.close();
+      relayWsRef.current = null;
+    };
+  }, [relaySession]);
+
+  // R-4 に移行し、リレーで完了通知を送金者へ送る
+  useEffect(() => {
+    if (isTxSuccess && step === "R-3") {
+      setStep("R-4");
+      if (txHash && relayWsRef.current?.readyState === WebSocket.OPEN) {
+        const msg: ReceiverToSenderMessage = { type: "tx_complete", txHash };
+        relayWsRef.current.send(JSON.stringify(msg));
+        relayWsRef.current.close();
+        relayWsRef.current = null;
+      }
+    }
+  }, [isTxSuccess, step, txHash]);
 
   const handlePresetJPYC = () => {
     if (chainConfig) {
@@ -248,6 +323,10 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
     const value = parseUnits(amount, dec);
     const deadline = Math.floor(Date.now() / 1000) + deadlineMinutes * 60;
 
+    // リレーセッション作成を試みる (失敗してもQRフォールバックで継続)
+    const session = await createSession(deadline);
+    if (session) setRelaySession(session);
+
     const data: QRaData = {
       type: "permit-request",
       chainId: selectedChainId,
@@ -256,6 +335,7 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
       value: value.toString(),
       decimals: dec,
       deadline,
+      ...(session && RELAY_URL ? { sessionId: session.sessionId, relayUrl: RELAY_URL } : {}),
     };
 
     setQrAData(data);
@@ -474,11 +554,20 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
               label="送金者にスキャンしてもらってください"
             />
             <div style={styles.card}>
-              <p style={styles.hint}>
-                送金者がスキャンするとアプリが開き、署名画面に進みます。
-                <br />
-                署名完了後、送金者の画面に表示されたQRコードをスキャンしてください。
-              </p>
+              {relaySession ? (
+                <p style={styles.hint}>
+                  送金者がスキャンして署名すると、自動的に次の画面へ進みます。
+                  <br />
+                  <span style={{ color: "#198754", fontWeight: 600 }}>リレー接続中</span>
+                  {" — "}手動でスキャンしたい場合は下のボタンを使ってください。
+                </p>
+              ) : (
+                <p style={styles.hint}>
+                  送金者がスキャンするとアプリが開き、署名画面に進みます。
+                  <br />
+                  署名完了後、送金者の画面に表示されたQRコードをスキャンしてください。
+                </p>
+              )}
             </div>
             <div style={styles.card}>
               <p style={{ ...styles.label, marginBottom: 8 }}>パーマリンク (同条件で繰り返し利用)</p>

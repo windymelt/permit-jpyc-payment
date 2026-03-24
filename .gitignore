@@ -12,3 +12,5 @@ app/.env
 contracts/.env
 app/.env.keys
 contracts/.env.keys
+.env
+.env.keys

@@ -9,6 +9,11 @@ import { signPermit } from "../lib/permit";
 import { getChainConfig } from "../lib/chains";
 import { ERC20_ABI } from "../lib/contracts";
 import { receiverConfirmUrl, readFragment, decodeFragment } from "../lib/qrUrl";
+import {
+  connectSenderWs,
+  type SenderToReceiverMessage,
+  type SenderIncomingMessage,
+} from "../lib/relay";
 
 
 type Step = "S-1" | "S-2" | "S-3";
@@ -21,6 +26,8 @@ interface QRaData {
   value: string;
   decimals: number;
   deadline: number;
+  sessionId?: string;
+  relayUrl?: string;
 }
 
 interface QRbData {
@@ -89,6 +96,8 @@ export default function SenderFlow() {
   const [qrBUrl, setQrBUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [signing, setSigning] = useState(false);
+  const [txComplete, setTxComplete] = useState<string | null>(null); // txHash
+  const [relayConnected, setRelayConnected] = useState(false);
 
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
@@ -203,6 +212,35 @@ export default function SenderFlow() {
       };
       setQrBUrl(receiverConfirmUrl(qrB));
       setStep("S-3");
+
+      // リレーが使えれば署名データを送信し、完了通知を待機する
+      if (qrAData.sessionId && qrAData.relayUrl) {
+        const ws = connectSenderWs(qrAData.sessionId, qrAData.relayUrl);
+        if (ws) {
+          ws.onopen = () => {
+            setRelayConnected(true);
+            const msg: SenderToReceiverMessage = {
+              type: "signature",
+              permit: { ...qrB },
+            };
+            ws.send(JSON.stringify(msg));
+          };
+          ws.onmessage = (event: MessageEvent<string>) => {
+            let incoming: SenderIncomingMessage;
+            try {
+              incoming = JSON.parse(event.data) as SenderIncomingMessage;
+            } catch {
+              return;
+            }
+            if (incoming.type === "tx_complete") {
+              setTxComplete(incoming.txHash);
+              ws.close();
+            }
+          };
+          ws.onerror = () => setRelayConnected(false);
+          ws.onclose = () => setRelayConnected(false);
+        }
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "署名に失敗しました");
     } finally {
@@ -289,16 +327,80 @@ export default function SenderFlow() {
         </>
       )}
 
-      {/* S-3: QR_B URL を表示（受取人がスキャンすると確認画面へ） */}
+      {/* S-3: 署名完了 */}
       {step === "S-3" && qrBUrl && (
         <>
-          <QRDisplay
-            value={qrBUrl}
-            label="受取人にスキャンしてもらってください"
-          />
-          <p style={styles.hint}>
-            受取人がスキャンすると送信確認画面が開きます。
-          </p>
+          {/* 送金完了通知 (リレー経由) */}
+          {txComplete && (() => {
+            const cfg = qrAData ? getChainConfig(qrAData.chainId) : undefined;
+            const explorerUrl = cfg ? `${cfg.explorerTxUrl}${txComplete}` : undefined;
+            return (
+              <div style={{
+                background: "#d1e7dd",
+                border: "1px solid #a3cfbb",
+                borderRadius: 12,
+                padding: 20,
+                textAlign: "center",
+              }}>
+                <p style={{ fontWeight: 700, fontSize: 18, margin: "0 0 8px" }}>送金完了</p>
+                <p style={{ fontSize: 13, color: "#0a3622", margin: "0 0 12px" }}>
+                  受取人が送金トランザクションを実行しました。
+                </p>
+                <p style={{ margin: "0 0 6px", fontSize: 13 }}>トランザクションハッシュ:</p>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: explorerUrl ? 12 : 0 }}>
+                  <p style={{ fontFamily: "monospace", fontSize: 11, wordBreak: "break-all", margin: 0, flex: 1, minWidth: 0 }}>
+                    {txComplete}
+                  </p>
+                  <button
+                    style={{
+                      padding: "4px 10px",
+                      fontSize: 13,
+                      border: "1px solid #ccc",
+                      borderRadius: 6,
+                      background: "#f5f5f5",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                    onClick={() => navigator.clipboard.writeText(txComplete)}
+                  >
+                    コピー
+                  </button>
+                </div>
+                {explorerUrl && (
+                  <a
+                    href={explorerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ fontSize: 14, color: "#1a73e8", textDecoration: "underline" }}
+                  >
+                    エクスプローラーで確認する
+                  </a>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* リレー待機中 or 非リレー: QR_B を表示 */}
+          {!txComplete && (
+            <>
+              {relayConnected && (
+                <div style={styles.card}>
+                  <p style={{ ...styles.hint, textAlign: "center" }}>
+                    署名データを送信しました。受取人の処理をお待ちください...
+                  </p>
+                </div>
+              )}
+              <QRDisplay
+                value={qrBUrl}
+                label={relayConnected ? "受取人がオフラインの場合はQRをスキャンしてもらってください" : "受取人にスキャンしてもらってください"}
+              />
+              {!relayConnected && (
+                <p style={styles.hint}>
+                  受取人がスキャンすると送信確認画面が開きます。
+                </p>
+              )}
+            </>
+          )}
         </>
       )}
     </div>
