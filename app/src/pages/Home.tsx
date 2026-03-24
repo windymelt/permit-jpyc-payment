@@ -82,7 +82,7 @@ export default function Home() {
           style={{ ...styles.roleButton, ...styles.receiverButton }}
           onClick={() => navigate("/receiver")}
         >
-          受取人
+          もらう
           <br />
           <span style={{ fontSize: 13, fontWeight: 400 }}>QRを提示する側</span>
         </button>
@@ -90,7 +90,7 @@ export default function Home() {
           style={{ ...styles.roleButton, ...styles.senderButton }}
           onClick={() => navigate("/sender")}
         >
-          送金者
+          おくる
           <br />
           <span style={{ fontSize: 13, fontWeight: 400 }}>QRをスキャンする側</span>
         </button>

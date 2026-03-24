@@ -22,6 +22,7 @@ import {
   NATIVE_DECIMALS,
   NATIVE_SYMBOL,
   DEFAULT_DEADLINE_MINUTES,
+  CHAIN_ID_AVALANCHE,
 } from "../lib/static";
 
 type Step = "R-1" | "R-2" | "R-2b" | "R-3" | "R-4";
@@ -148,6 +149,7 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
   const [selectedChainId, setSelectedChainId] = useState<number>(
     connectedChainId ?? 137
   );
+  const [formMode, setFormMode] = useState<"simple" | "advanced">("simple");
   const [tokenMode, setTokenMode] = useState<"jpyc" | "manual">("jpyc");
   const [tokenAddress, setTokenAddress] = useState<string>("");
   const [amount, setAmount] = useState<string>("");
@@ -297,6 +299,14 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
       }
     }
   }, [isTxSuccess, step, txHash]);
+
+  // かんたん受け取りモード: Avalanche + JPYC + 5分に固定する
+  useEffect(() => {
+    if (formMode !== "simple") return;
+    setSelectedChainId(CHAIN_ID_AVALANCHE);
+    setTokenMode("jpyc");
+    setDeadlineMinutes(5);
+  }, [formMode]);
 
   // JPYC モード時: チェーン変更に追従してアドレスを自動設定する
   useEffect(() => {
@@ -518,131 +528,174 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
 
       {/* R-1: リクエスト作成フォーム */}
       {step === "R-1" && (
-        <div style={styles.card}>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>チェーン</label>
-            <select
-              style={styles.select}
-              value={selectedChainId}
-              onChange={(e) => setSelectedChainId(Number(e.target.value))}
-            >
-              {Object.entries(CHAIN_CONFIGS).map(([id, cfg]) => (
-                <option key={id} value={id}>
-                  {cfg.chain.name} (chainId: {id})
-                </option>
-              ))}
-            </select>
+        <>
+          {/* モード切替タブ */}
+          <div style={{ display: "flex", gap: 0, borderRadius: 10, overflow: "hidden", border: "1px solid #dee2e6" }}>
+            {(["simple", "advanced"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setFormMode(mode)}
+                style={{
+                  flex: 1,
+                  padding: "10px 0",
+                  fontSize: 14,
+                  fontWeight: formMode === mode ? 700 : 400,
+                  border: "none",
+                  cursor: "pointer",
+                  background: formMode === mode ? "#0d6efd" : "#f8f9fa",
+                  color: formMode === mode ? "white" : "#495057",
+                  transition: "background 0.15s",
+                }}
+              >
+                {mode === "simple" ? "かんたん受け取り" : "高度な設定"}
+              </button>
+            ))}
           </div>
 
-          <div style={styles.formGroup}>
-            <label style={styles.label}>トークン</label>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {/* JPYC 選択肢 */}
-              <label style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "10px 14px",
-                border: `2px solid ${tokenMode === "jpyc" ? "#0d6efd" : "#ced4da"}`,
-                borderRadius: 8,
-                cursor: "pointer",
-                background: tokenMode === "jpyc" ? "#f0f6ff" : "white",
-              }}>
+          {/* かんたん受け取り */}
+          {formMode === "simple" && (
+            <div style={styles.card}>
+              <p style={{ margin: "0 0 4px", fontSize: 13, color: "#6c757d", textAlign: "center" as const }}>
+                Avalanche / JPYC / 有効期限5分
+              </p>
+              <div style={styles.formGroup}>
+                <label style={{ ...styles.label, textAlign: "center" as const, marginBottom: 8 }}>
+                  金額 (JPYC)
+                </label>
                 <input
-                  type="radio"
-                  name="tokenMode"
-                  value="jpyc"
-                  checked={tokenMode === "jpyc"}
-                  onChange={() => setTokenMode("jpyc")}
-                  style={{ accentColor: "#0d6efd", width: 16, height: 16 }}
-                />
-                <span style={{ fontSize: 14, fontWeight: tokenMode === "jpyc" ? 600 : 400 }}>
-                  JPYC
-                </span>
-              </label>
-
-              {/* 手動入力選択肢 */}
-              <label style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "10px 14px",
-                border: `2px solid ${tokenMode === "manual" ? "#0d6efd" : "#ced4da"}`,
-                borderRadius: 8,
-                cursor: "pointer",
-                background: tokenMode === "manual" ? "#f0f6ff" : "white",
-              }}>
-                <input
-                  type="radio"
-                  name="tokenMode"
-                  value="manual"
-                  checked={tokenMode === "manual"}
-                  onChange={() => {
-                    setTokenMode("manual");
-                    setTokenAddress("");
-                    setTokenSymbol("");
+                  style={{
+                    ...styles.input,
+                    fontSize: 48,
+                    fontWeight: 700,
+                    textAlign: "center" as const,
+                    padding: "12px 8px",
+                    letterSpacing: "-0.02em",
                   }}
-                  style={{ accentColor: "#0d6efd", width: 16, height: 16 }}
-                />
-                <span style={{ fontSize: 14, fontWeight: tokenMode === "manual" ? 600 : 400 }}>
-                  手動で入力
-                </span>
-              </label>
-
-              {/* 手動入力時のみテキストボックスを表示 */}
-              {tokenMode === "manual" && (
-                <input
-                  style={styles.input}
-                  type="text"
-                  placeholder="0x..."
-                  value={tokenAddress}
-                  onChange={(e) => setTokenAddress(e.target.value)}
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleCreateRequest();
+                  }}
                   autoFocus
                 />
+              </div>
+
+              {showAllowlistWarning && (
+                <div style={styles.warning}>
+                  100,000 JPYC を超える送金はallowlist登録が必要です。
+                </div>
               )}
-            </div>
-          </div>
 
-          <div style={styles.formGroup}>
-            <label style={styles.label}>金額 ({tokenSymbol || "トークン単位"})</label>
-            <input
-              style={styles.input}
-              type="number"
-              min="0"
-              placeholder="例: 1000"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
-          </div>
+              {formError && <p style={styles.errorText}>{formError}</p>}
 
-          <div style={styles.formGroup}>
-            <label style={styles.label}>有効期限 (分)</label>
-            <input
-              style={styles.input}
-              type="number"
-              min="1"
-              max="60"
-              value={deadlineMinutes}
-              onChange={(e) => setDeadlineMinutes(Number(e.target.value))}
-            />
-          </div>
-
-          {showAllowlistWarning && (
-            <div style={styles.warning}>
-              100,000 JPYC を超える送金はallowlist登録が必要です。
+              <button
+                style={styles.button}
+                onClick={handleCreateRequest}
+                disabled={!isConnected || loadingToken}
+              >
+                {loadingToken ? "トークン情報取得中..." : "QRコードを生成"}
+              </button>
             </div>
           )}
 
-          {formError && <p style={styles.errorText}>{formError}</p>}
+          {/* 高度な設定 */}
+          {formMode === "advanced" && (
+            <div style={styles.card}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>チェーン</label>
+                <select
+                  style={styles.select}
+                  value={selectedChainId}
+                  onChange={(e) => setSelectedChainId(Number(e.target.value))}
+                >
+                  {Object.entries(CHAIN_CONFIGS).map(([id, cfg]) => (
+                    <option key={id} value={id}>
+                      {cfg.chain.name} (chainId: {id})
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-          <button
-            style={styles.button}
-            onClick={handleCreateRequest}
-            disabled={!isConnected || loadingToken}
-          >
-            {loadingToken ? "トークン情報取得中..." : "QRコードを生成"}
-          </button>
-        </div>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>トークン</label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <label style={{
+                    display: "flex", alignItems: "center", gap: 10, padding: "10px 14px",
+                    border: `2px solid ${tokenMode === "jpyc" ? "#0d6efd" : "#ced4da"}`,
+                    borderRadius: 8, cursor: "pointer",
+                    background: tokenMode === "jpyc" ? "#f0f6ff" : "white",
+                  }}>
+                    <input
+                      type="radio" name="tokenMode" value="jpyc"
+                      checked={tokenMode === "jpyc"}
+                      onChange={() => setTokenMode("jpyc")}
+                      style={{ accentColor: "#0d6efd", width: 16, height: 16 }}
+                    />
+                    <span style={{ fontSize: 14, fontWeight: tokenMode === "jpyc" ? 600 : 400 }}>JPYC</span>
+                  </label>
+
+                  <label style={{
+                    display: "flex", alignItems: "center", gap: 10, padding: "10px 14px",
+                    border: `2px solid ${tokenMode === "manual" ? "#0d6efd" : "#ced4da"}`,
+                    borderRadius: 8, cursor: "pointer",
+                    background: tokenMode === "manual" ? "#f0f6ff" : "white",
+                  }}>
+                    <input
+                      type="radio" name="tokenMode" value="manual"
+                      checked={tokenMode === "manual"}
+                      onChange={() => { setTokenMode("manual"); setTokenAddress(""); setTokenSymbol(""); }}
+                      style={{ accentColor: "#0d6efd", width: 16, height: 16 }}
+                    />
+                    <span style={{ fontSize: 14, fontWeight: tokenMode === "manual" ? 600 : 400 }}>手動で入力</span>
+                  </label>
+
+                  {tokenMode === "manual" && (
+                    <input
+                      style={styles.input} type="text" placeholder="0x..."
+                      value={tokenAddress} onChange={(e) => setTokenAddress(e.target.value)} autoFocus
+                    />
+                  )}
+                </div>
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.label}>金額 ({tokenSymbol || "トークン単位"})</label>
+                <input
+                  style={styles.input} type="number" min="0" placeholder="例: 1000"
+                  value={amount} onChange={(e) => setAmount(e.target.value)}
+                />
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.label}>有効期限 (分)</label>
+                <input
+                  style={styles.input} type="number" min="1" max="60"
+                  value={deadlineMinutes} onChange={(e) => setDeadlineMinutes(Number(e.target.value))}
+                />
+              </div>
+
+              {showAllowlistWarning && (
+                <div style={styles.warning}>
+                  100,000 JPYC を超える送金はallowlist登録が必要です。
+                </div>
+              )}
+
+              {formError && <p style={styles.errorText}>{formError}</p>}
+
+              <button
+                style={styles.button}
+                onClick={handleCreateRequest}
+                disabled={!isConnected || loadingToken}
+              >
+                {loadingToken ? "トークン情報取得中..." : "QRコードを生成"}
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       {/* R-2: QR_A 表示（送金者がスキャンするとアプリが開く） */}
