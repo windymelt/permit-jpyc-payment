@@ -6,6 +6,7 @@ import { formatUnits } from "viem";
 import QRDisplay from "../components/QRDisplay";
 import QRScanner from "../components/QRScanner";
 import { signPermit } from "../lib/permit";
+import { hapticSuccess, hapticError } from "../lib/haptics";
 import { getChainConfig } from "../lib/chains";
 import { ERC20_ABI } from "../lib/contracts";
 import { receiverConfirmUrl, readFragment, decodeFragment } from "../lib/qrUrl";
@@ -230,6 +231,7 @@ export default function SenderFlow() {
       };
       setQrBUrl(receiverConfirmUrl(qrB));
       setStep("S-3");
+      hapticSuccess();
 
       // リレーが使えれば署名データを送信し、完了通知を待機する
       if (qrAData.sessionId && qrAData.relayUrl) {
@@ -261,6 +263,7 @@ export default function SenderFlow() {
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "署名に失敗しました");
+      hapticError();
     } finally {
       setSigning(false);
     }

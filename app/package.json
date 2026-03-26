@@ -22,7 +22,8 @@
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.0",
     "viem": "^2.19.0",
-    "wagmi": "^2.12.0"
+    "wagmi": "^2.12.0",
+    "web-haptics": "^0.0.6"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",

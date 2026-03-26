@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useWriteContract, useWaitForTransactionReceipt, useAccount, usePublicClient } from "wagmi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { formatUnits, parseUnits } from "viem";
+import { hapticSuccess, hapticError } from "../lib/haptics";
 import QRDisplay from "../components/QRDisplay";
 import { getChainConfig, CHAIN_CONFIGS } from "../lib/chains";
 import { PERMIT_PAYMENT_ABI, ERC20_ABI } from "../lib/contracts";
@@ -171,6 +172,20 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
   // QR_A カウントダウン表示
   const [countdown, setCountdown] = useState<string>("");
 
+  // 金額入力のカンマ区切り表示
+  const formatAmountDisplay = (raw: string): string => {
+    if (!raw) return "";
+    const [intPart, decPart] = raw.split(".");
+    const formatted = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return decPart !== undefined ? `${formatted}.${decPart}` : formatted;
+  };
+  const handleAmountChange = (input: string) => {
+    const stripped = input.replace(/,/g, "");
+    if (stripped === "" || /^\d*\.?\d*$/.test(stripped)) {
+      setAmount(stripped);
+    }
+  };
+
   const chainConfig = getChainConfig(selectedChainId);
 
   const { writeContract, data: txHash, isPending, error: writeError } = useWriteContract();
@@ -292,6 +307,7 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
   useEffect(() => {
     if (isTxSuccess && step === "R-3") {
       setStep("R-4");
+      hapticSuccess();
       if (txHash && relayWsRef.current?.readyState === WebSocket.OPEN) {
         const msg: ReceiverToSenderMessage = { type: "tx_complete", txHash };
         relayWsRef.current.send(JSON.stringify(msg));
@@ -300,6 +316,13 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
       }
     }
   }, [isTxSuccess, step, txHash]);
+
+  // トランザクション失敗時のハプティクス
+  useEffect(() => {
+    if (writeError) {
+      hapticError();
+    }
+  }, [writeError]);
 
   // かんたん受け取りモード: Avalanche + JPYC + 5分に固定する
   useEffect(() => {
@@ -510,7 +533,13 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
 
   return (
     <div style={styles.root}>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes flipCard {
+          0% { transform: rotateZ(0deg); }
+          100% { transform: rotateZ(180deg); }
+        }
+      `}</style>
       <div style={styles.header}>
         <button style={styles.backButton} onClick={() => navigate("/")}>
           &#8592;
@@ -602,11 +631,11 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
                     padding: "12px 8px",
                     letterSpacing: "-0.02em",
                   }}
-                  type="number"
-                  min="0"
+                  type="text"
+                  inputMode="decimal"
                   placeholder="0"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
+                  value={formatAmountDisplay(amount)}
+                  onChange={(e) => handleAmountChange(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") handleCreateRequest();
                   }}
@@ -695,8 +724,8 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
               <div style={styles.formGroup}>
                 <label style={styles.label}>金額 ({tokenSymbol || "トークン単位"})</label>
                 <input
-                  style={styles.input} type="number" min="0" placeholder="例: 1000"
-                  value={amount} onChange={(e) => setAmount(e.target.value)}
+                  style={styles.input} type="text" inputMode="decimal" placeholder="例: 1,000"
+                  value={formatAmountDisplay(amount)} onChange={(e) => handleAmountChange(e.target.value)}
                 />
               </div>
 
@@ -742,7 +771,7 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
         const isExpired = countdown === "期限切れ";
         return (
           <>
-            {/* グラデーションカード */}
+            {/* グラデーションカード: 表示後に回転して対面の相手側を向く */}
             <div style={{
               background: "linear-gradient(150deg, #0a1628 0%, #0d47a1 55%, #29b6f6 100%)",
               borderRadius: 20,
@@ -752,10 +781,17 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
               alignItems: "center",
               gap: 16,
               boxShadow: "0 6px 24px rgba(13, 71, 161, 0.35)",
+              animation: "flipCard 0.8s ease-in-out 0.5s forwards",
             }}>
               {/* タイトル */}
               <p style={{ color: "white", fontSize: 18, fontWeight: 700, margin: 0, letterSpacing: "0.02em" }}>
                 {tokenSymbol ? `${tokenSymbol}で受け取る` : "受け取る"}
+              </p>
+
+              {/* 金額 */}
+              <p style={{ color: "white", fontSize: 40, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>
+                {formatAmountDisplay(formattedAmount)}
+                <span style={{ fontSize: 18, fontWeight: 500, marginLeft: 6 }}>{tokenSymbol}</span>
               </p>
 
               {/* QRコード: 期限切れ時はグレイアウトオーバーレイを重ねる */}
