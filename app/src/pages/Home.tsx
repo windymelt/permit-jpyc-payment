@@ -87,7 +87,7 @@ const TRANSFER_ABI = [
 ] as const;
 
 const ERC681_URL =
-  "ethereum:0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29@43114/transfer?address=windymelt.eth&uint256=100000000000000000000";
+  "ethereum:0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29@0xA86A/transfer?address=windymelt.eth&uint256=100000000000000000000";
 
 export default function Home() {
   const navigate = useNavigate();

@@ -539,6 +539,10 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
           0% { transform: rotateZ(0deg); }
           100% { transform: rotateZ(180deg); }
         }
+        .qr-card { animation: none; }
+        @media (orientation: portrait) {
+          .qr-card { animation: flipCard 0.8s ease-in-out 0.5s forwards; }
+        }
       `}</style>
       <div style={styles.header}>
         <button style={styles.backButton} onClick={() => navigate("/")}>
@@ -772,7 +776,7 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
         return (
           <>
             {/* グラデーションカード: 表示後に回転して対面の相手側を向く */}
-            <div style={{
+            <div className="qr-card" style={{
               background: "linear-gradient(150deg, #0a1628 0%, #0d47a1 55%, #29b6f6 100%)",
               borderRadius: 20,
               padding: "28px 24px 20px",
@@ -781,7 +785,6 @@ export default function ReceiverFlow({ initialStep = "R-1" }: Props) {
               alignItems: "center",
               gap: 16,
               boxShadow: "0 6px 24px rgba(13, 71, 161, 0.35)",
-              animation: "flipCard 0.8s ease-in-out 0.5s forwards",
             }}>
               {/* タイトル */}
               <p style={{ color: "white", fontSize: 18, fontWeight: 700, margin: 0, letterSpacing: "0.02em" }}>
